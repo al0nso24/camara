@@ -2,6 +2,14 @@
   "expo": {
     "name": "camara",
     "slug": "camara",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Necesitamos la cámara para tomar fotos :v"
+        }
+      ]
+    ],
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
