@@ -1,28 +1,43 @@
-import { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { StyleSheet, Text, View, Image, TouchableOpacity, ActivityIndicator, Alert, Linking } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, Camera } from 'expo-camera';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export default function App(){
+const STORAGE_KEY = '@camara:fotos';
+const MAX_FOTOS = 3;
+
+const formatearFecha = (fecha) => {
+  const dd = (n) => String(n).padStart(2, "0");
+  const dia = `${dd(fecha.getDate())}/${dd(fecha.getMonth() + 1)}`;
+  const hora = `${dd(fecha.getHours())}:${dd(fecha.getMinutes())}`;
+  return `${dia}/${fecha.getFullYear()} ${hora}:${dd(fecha.getSeconds())}`;
+}
+
+export default function App() {
   //null = preguntando | true = concedido | false = denegado
   const [hasPermission, setHasPermission] = useState(null);
+  const [canAskAgain, setCanAskAgain] = useState(true);
   const [photo, setPhoto] = useState(null); //URI de la foto
   const [isCameraReady, setIsCameraReady] = useState(false); //true cuando esté lista
   const [isTaking, setIsTaking] = useState(false); //evita tomar dos fotos con doble toque
 
   const [facing, setFacing] = useState("back"); //Comienza con la cámara trasera
   const [flash, setFlash] = useState("off"); //Empieza apagado
+  const [galeria, setGaleria] = useState([]); //galería de fotos
 
   const cameraRef = useRef(null); //referencia a la cámara
 
+  const pedirPermiso = useCallback(async () => {
+    const permiso = await Camera.requestCameraPermissionsAsync();
+    setHasPermission(permiso.granted);
+    setCanAskAgain(permiso.canAskAgain);
+  }, []);
+
   //Pedir permisos (se ejecuta una sola vez)
   useEffect(() => {
-    //useEffect no puede ser async, por eso se usa una función async que se ejecuta sola
-    (async () => {
-      const {status} = await Camera.requestCameraPermissionsAsync();
-      setHasPermission(status == "granted"); //puede ser 'granted', 'denied' o 'undetermined'
-    })
-  }, []) //vacío porque se ejecuta una sola vez al abrir la app
+    pedirPermiso();
+  }, [pedirPermiso]);
 
   //Cambiar el modo de cámara (trasera o frontal)
   const cambiarCamara = () => {
@@ -33,21 +48,58 @@ export default function App(){
 
   //Prender o apagar el flash de la cámara
   const cambiarFlash = () => {
+    //Inicialmente el flash está apagado
     setFlash((actual) => (actual === "off" ? "on" : "off"));
   }
 
+  const cargarGaleria = useCallback(async () => {
+    try {
+      const json = await AsyncStorage.getItem(STORAGE_KEY);
+      if (json) {
+        setGaleria(JSON.parse(json));
+      }
+    } catch (error) {
+      console.log("Error al leer AsyncStorage", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    cargarGaleria();
+  }, [cargarGaleria]);
+
+  const guardarEnGaleria = async (nuevaFoto) => {
+    const actualizada = [nuevaFoto, ...galeria].slice(0, MAX_FOTOS);
+    setGaleria(actualizada);
+    try {
+      const json = JSON.stringify(actualizada);
+      await AsyncStorage.setItem(STORAGE_KEY, json);
+    } catch (error) {
+      console.log('Error al guardar en AsyncStorage:', error);
+    }
+  };
+
+  const limpiarGaleria = async () => {
+    setGaleria([]);
+    await AsyncStorage.removeItem(STORAGE_KEY);
+  };
+
   //Tomar foto
   const tomarFoto = async () => {
-    if(!cameraRef.current || !isCameraReady || isTaking){
+    if (!cameraRef.current || !isCameraReady || isTaking) {
       return;
     }
-    try{
+    try {
       setIsTaking(true);
-      const foto = await cameraRef.current.takePictureAsync({quality: 0.7}); //toma la foto
-      setPhoto(foto.uri); //cambia a la vista IMAGEN
-    }catch (error){
+      const foto = await cameraRef.current.takePictureAsync({ quality: 0.7 }); //toma la foto
+      const nuevaFoto = {
+        uri: foto.uri, fecha: formatearFecha(new Date())
+      }
+      setPhoto(nuevaFoto);
+      await guardarEnGaleria(nuevaFoto);
+      console.log("Foto tomada :3");
+    } catch (error) {
       Alert.alert("Error", "No se pudo tomar la foto.");
-    }finally{
+    } finally {
       setIsTaking(false); //pase lo que pase o simplemente cuando se terminó de tomar la foto
     }
   }
@@ -77,8 +129,35 @@ export default function App(){
         <Text style={styles.icono}> </Text>
         <Text style={styles.mensaje}>Sin acceso a la cámara.</Text>
         <Text style={styles.submensaje}>
-          Activa el permiso desde Ajustes para usar CameraApp UTP.
+          CameraApp UTP necesita la cámara para tomar fotos.
         </Text>
+        <TouchableOpacity
+          style={[styles.boton, styles.botonAncho]}
+          onPress={
+            canAskAgain ? pedirPermiso : () => Linking.openSettings()
+          }
+        >
+          <Text style={styles.textoBoton}>
+            {canAskAgain ? 'Conceder permiso' : 'Abrir Ajustes'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (photo) {
+    return (
+      <View style={styles.contenedor}>
+        <StatusBar style="light" />
+        <Text style={styles.titulo}> Foto capturada</Text>
+        <Image
+          source={{ uri: photo.uri }}
+          style={styles.preview}
+          resizeMode="cover"
+        />
+        <TouchableOpacity style={styles.boton} onPress={volverCamara}>
+          <Text style={styles.textoBoton}>Volver a cámara</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -88,19 +167,50 @@ export default function App(){
     <View style={styles.contenedor}>
       <StatusBar style="light" />
       <Text style={styles.titulo}>CameraApp UTP</Text>
-      <CameraView
-        ref={cameraRef}
-        style={styles.camara}
-        facing="back"
-        onCameraReady={() => setIsCameraReady(true)}
-      />
+      <View style={styles.marcoCamara}>
+        <CameraView
+          ref={cameraRef}
+          style={styles.camara}
+          facing={facing}
+          flash={flash}
+          onCameraReady={() => setIsCameraReady(true)}
+        />
+        {/*Controles encima (CameraView no admite hijos)*/}
+        <View style={styles.barraSuperior}>
+          <TouchableOpacity style={styles.chip} onPress={cambiarFlash}>
+            <Text style={styles.textoChip}>
+              ⚡ Flash: {flash === 'on' ? 'ON' : 'OFF'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.chip} onPress={cambiarCamara}>
+            <Text style={styles.textoChip}>
+              {facing === 'back' ? 'Trasera' : 'Frontal'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      {/*Galería: últimas 3 fotos guardadas*/}
+      {galeria.length > 0 && (
+        <View style={styles.galeria}>
+          {galeria.map((item) => (
+            <TouchableOpacity
+              key={item.uri}
+              onPress={() => setPhoto(item)}
+            >
+              <Image source={{ uri: item.uri }} style={styles.miniatura} />
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity onPress={limpiarGaleria} style={styles.contenedorLimpiar}>
+            <Text style={styles.limpiar}>Limpiar galería</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <TouchableOpacity
         style={[styles.boton, deshabilitado && styles.botonOff]}
         onPress={tomarFoto}
         disabled={deshabilitado}
       >
         <Text style={styles.textoBoton}>
-          {/*Cuando se toma la foto*/}
           {isTaking ? 'Procesando...' : 'Tomar foto'}
         </Text>
       </TouchableOpacity>
@@ -133,10 +243,61 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
+  marcoCamara: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 16,
+  },
+
   camara: {
     flex: 1,
     borderRadius: 16,
     overflow: 'hidden',
+  },
+
+  barraSuperior: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  chip: {
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+
+  textoChip: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+
+  galeria: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+
+  miniatura: {
+    width: 67,
+    height: 67,
+    borderRadius: 8,
+    marginHorizontal: 4,
+  },
+
+  contenedorLimpiar: {
+    flex: 1,
+    alignItems: "flex-end"
+  },
+
+  limpiar: {
+    color: '#ee6c74',
+    fontWeight: "bold",
   },
 
   preview: {
@@ -151,9 +312,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 16,
   },
-  
-  botonOff: { 
-    opacity: 0.5 
+
+  botonAncho: {
+    alignSelf: 'stretch',
+  },
+
+  botonOff: {
+    opacity: 0.5
   },
 
   textoBoton: {
