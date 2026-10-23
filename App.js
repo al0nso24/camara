@@ -4,8 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 import { CameraView, Camera } from 'expo-camera';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = '@camara:fotos';
-const MAX_FOTOS = 3;
+const STORAGE_KEY = '@camara:fotos'; //nombre con el que AsyncStorage guarda la galería
+const MAX_FOTOS = 3; //limita la lista a 3 fotos
 
 const formatearFecha = (fecha) => {
   const dd = (n) => String(n).padStart(2, "0");
@@ -17,13 +17,13 @@ const formatearFecha = (fecha) => {
 export default function App() {
   //null = preguntando | true = concedido | false = denegado
   const [hasPermission, setHasPermission] = useState(null);
-  const [canAskAgain, setCanAskAgain] = useState(true);
+  const [canAskAgain, setCanAskAgain] = useState(true); //volver a mostrar la solicitud de permiso
   const [photo, setPhoto] = useState(null); //URI de la foto
   const [isCameraReady, setIsCameraReady] = useState(false); //true cuando esté lista
   const [isTaking, setIsTaking] = useState(false); //evita tomar dos fotos con doble toque
 
-  const [facing, setFacing] = useState("back"); //Comienza con la cámara trasera
-  const [flash, setFlash] = useState("off"); //Empieza apagado
+  const [facing, setFacing] = useState("back"); //comienza con la cámara trasera
+  const [flash, setFlash] = useState("off"); //empieza apagado
   const [galeria, setGaleria] = useState([]); //galería de fotos
 
   const cameraRef = useRef(null); //referencia a la cámara
@@ -34,10 +34,9 @@ export default function App() {
     setCanAskAgain(permiso.canAskAgain);
   }, []);
 
-  //Pedir permisos (se ejecuta una sola vez)
   useEffect(() => {
     pedirPermiso();
-  }, [pedirPermiso]);
+  }, [pedirPermiso]); //se ejcuta cuando la función cambia
 
   //Cambiar el modo de cámara (trasera o frontal)
   const cambiarCamara = () => {
@@ -68,7 +67,7 @@ export default function App() {
   }, [cargarGaleria]);
 
   const guardarEnGaleria = async (nuevaFoto) => {
-    const actualizada = [nuevaFoto, ...galeria].slice(0, MAX_FOTOS);
+    const actualizada = [nuevaFoto, ...galeria].slice(0, MAX_FOTOS); //conserva solo los primeros tres
     setGaleria(actualizada);
     try {
       const json = JSON.stringify(actualizada);
@@ -78,6 +77,7 @@ export default function App() {
     }
   };
 
+  //Borra todas las fotos de la galería
   const limpiarGaleria = async () => {
     setGaleria([]);
     await AsyncStorage.removeItem(STORAGE_KEY);
@@ -85,20 +85,22 @@ export default function App() {
 
   //Tomar foto
   const tomarFoto = async () => {
+    //Si no hay una cámara conectada, todavía no está lista o ya se está capturando otra foto.
     if (!cameraRef.current || !isCameraReady || isTaking) {
       return;
     }
+
     try {
       setIsTaking(true);
-      const foto = await cameraRef.current.takePictureAsync({ quality: 0.7 }); //toma la foto
-      const nuevaFoto = {
+      const foto = await cameraRef.current.takePictureAsync({ quality: 0.7 }); //toma la foto (70% de calidad)
+      const nuevaFoto = { //crea la nueva foto
         uri: foto.uri, fecha: formatearFecha(new Date())
       }
-      setPhoto(nuevaFoto);
-      await guardarEnGaleria(nuevaFoto);
+      setPhoto(nuevaFoto); //guarda la nueva foto
+      await guardarEnGaleria(nuevaFoto); //guarda la foto en la lista de la galería
       console.log("Foto tomada :3");
     } catch (error) {
-      Alert.alert("Error", "No se pudo tomar la foto.");
+      Alert.alert("Error", "No se pudo tomar la foto."); //mensaje de error
     } finally {
       setIsTaking(false); //pase lo que pase o simplemente cuando se terminó de tomar la foto
     }
@@ -133,6 +135,7 @@ export default function App() {
         </Text>
         <TouchableOpacity
           style={[styles.boton, styles.botonAncho]}
+          //Vuelve a preguntar de nuevo sobre los permisos
           onPress={
             canAskAgain ? pedirPermiso : () => Linking.openSettings()
           }
@@ -145,6 +148,7 @@ export default function App() {
     );
   }
 
+  //Vista previa de la foto
   if (photo) {
     return (
       <View style={styles.contenedor}>
@@ -156,24 +160,28 @@ export default function App() {
           resizeMode="cover"
         />
         <TouchableOpacity style={styles.boton} onPress={volverCamara}>
+        {/*Al pulsar "volverCamara" establece photo en null, y vuelve a la vista de la cámara*/}
           <Text style={styles.textoBoton}>Volver a cámara</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  //Está deshabilitado cuando la cámara no está lista o cuandoya se está tomando otra foto
   const deshabilitado = !isCameraReady || isTaking;
+
   return (
     <View style={styles.contenedor}>
       <StatusBar style="light" />
       <Text style={styles.titulo}>CameraApp UTP</Text>
       <View style={styles.marcoCamara}>
         <CameraView
-          ref={cameraRef}
+          ref={cameraRef} //conecta la referencia con el componente de cámara para poder llamar takePictureAsync
           style={styles.camara}
+          //Recibe los estados actuales
           facing={facing}
           flash={flash}
-          onCameraReady={() => setIsCameraReady(true)}
+          onCameraReady={() => setIsCameraReady(true)} //cuando la vista está lista
         />
         {/*Controles encima (CameraView no admite hijos)*/}
         <View style={styles.barraSuperior}>
@@ -194,8 +202,8 @@ export default function App() {
         <View style={styles.galeria}>
           {galeria.map((item) => (
             <TouchableOpacity
-              key={item.uri}
-              onPress={() => setPhoto(item)}
+              key={item.uri} //identificador de cada elemento
+              onPress={() => setPhoto(item)} //al tocar, se abre la foto
             >
               <Image source={{ uri: item.uri }} style={styles.miniatura} />
             </TouchableOpacity>
@@ -210,6 +218,7 @@ export default function App() {
         onPress={tomarFoto}
         disabled={deshabilitado}
       >
+        {/*Mientras está cargando la foto, muestra "Procesando", al terminar muestra "Tomar foto" para la siguiente*/}
         <Text style={styles.textoBoton}>
           {isTaking ? 'Procesando...' : 'Tomar foto'}
         </Text>
