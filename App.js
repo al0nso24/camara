@@ -152,7 +152,10 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   
-  botonOff: { opacity: 0.5 },
+  botonOff: { 
+    opacity: 0.5 
+  },
+
   textoBoton: {
     color: '#fff',
     fontSize: 18,
